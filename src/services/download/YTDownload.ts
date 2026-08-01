@@ -9,11 +9,10 @@ const execAsync = promisify(exec);
 export default class YTDownload {
   public async download(videoId: string): Promise<string> {
     const output = `${DOWNLOAD_PATH}/${videoId}.mp3`;
-
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
     await execAsync(
-      `yt-dlp -x --audio-format mp3 -o "${output}" "${url}"`,
+      `yt-dlp --extract-audio --audio-format mp3 --no-playlist --extractor-args "youtube:player_client=android" -o "${output}" "${url}"`,
     );
 
     if (!fs.existsSync(output)) {
