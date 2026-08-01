@@ -1,2 +1,4 @@
 [phases.install]
-cmds = ["yarn install"]
+cmds = [
+  "yarn install --no-frozen-lockfile"
+]
