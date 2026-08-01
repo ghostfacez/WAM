@@ -1,6 +1,9 @@
 [phases.setup]
 aptPkgs = [
   "ffmpeg",
+  "python3",
+  "python3-pip",
+  "yt-dlp",
   "libnss3",
   "libatk1.0-0",
   "libatk-bridge2.0-0",
