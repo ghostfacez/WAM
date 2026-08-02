@@ -1,7 +1,8 @@
 import fs from 'fs';
+import path from 'path';
+import ytdl from '@distube/ytdl-core';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
 
 import { DOWNLOAD_PATH } from '../../config';
 
@@ -13,53 +14,46 @@ export default class YTDownload {
       fs.mkdirSync(DOWNLOAD_PATH, { recursive: true });
     }
 
-    const output = path.join(DOWNLOAD_PATH, `${videoId}.mp3`);
     const url = `https://www.youtube.com/watch?v=${videoId}`;
-
     const proxyUrl = process.env.PROXY_URL;
-    const proxyFlag = proxyUrl ? `--proxy "${proxyUrl}"` : '';
+    const agent = proxyUrl ? ytdl.createProxyAgent(proxyUrl) : undefined;
 
-    console.log('=== PROXY URL ===', proxyUrl || 'NOT SET');
+    console.log('=== DOWNLOADING ===', proxyUrl ? 'via proxy' : 'no proxy');
 
-    // LIST FORMATS
-    console.log('=== LISTING FORMATS ===');
-    try {
-      const { stdout } = await execAsync(
-        `yt-dlp ${proxyFlag} -F "${url}"`,
-        { maxBuffer: 1024 * 1024 * 10 }
-      );
-      console.log(stdout);
-    } catch (e: any) {
-      console.error('List error:', e.stderr || e.message);
+    const info = await ytdl.getInfo(url, { agent });
+    console.log('=== TITLE ===', info.videoDetails.title);
+    console.log('=== FORMATS ===', info.formats.length, 'available');
+
+    const stream = ytdl(url, {
+      filter: 'audioonly',
+      quality: 'highestaudio',
+      agent,
+    });
+
+    const rawOutput = path.join(DOWNLOAD_PATH, `${videoId}.webm`);
+    const mp3Output = path.join(DOWNLOAD_PATH, `${videoId}.mp3`);
+
+    const writer = fs.createWriteStream(rawOutput);
+    stream.pipe(writer);
+
+    await new Promise<void>((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+      stream.on('error', reject);
+    });
+
+    // Convert to mp3 with ffmpeg
+    console.log('=== CONVERTING TO MP3 ===');
+    await execAsync(`ffmpeg -i "${rawOutput}" -vn -ab 192k "${mp3Output}" -y`, {
+      timeout: 30000,
+    });
+
+    fs.unlinkSync(rawOutput);
+
+    if (!fs.existsSync(mp3Output)) {
+      throw new Error('Conversion failed: MP3 file was not created');
     }
 
-    // DOWNLOAD
-    const cmd = `yt-dlp \
-      ${proxyFlag} \
-      -f "bestaudio/best" \
-      --extract-audio \
-      --audio-format mp3 \
-      --audio-quality 0 \
-      --no-playlist \
-      --no-warnings \
-      --no-check-certificate \
-      --socket-timeout 30 \
-      --retries 5 \
-      -o "${output}" \
-      "${url}"`;
-
-    try {
-      console.log('=== DOWNLOADING ===');
-      await execAsync(cmd, { maxBuffer: 1024 * 1024 * 10 });
-    } catch (error: any) {
-      console.error('yt-dlp error:', error.stderr || error.message);
-      throw new Error(`Download failed: ${error.stderr || error.message}`);
-    }
-
-    if (!fs.existsSync(output)) {
-      throw new Error('Download failed: MP3 file was not created');
-    }
-
-    return output;
+    return mp3Output;
   }
 }
