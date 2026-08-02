@@ -15,29 +15,28 @@ export default class YTDownload {
 
     const output = path.join(DOWNLOAD_PATH, `${videoId}.mp3`);
     const url = `https://www.youtube.com/watch?v=${videoId}`;
+
     const proxyUrl = process.env.PROXY_URL;
-    const proxyFlag = proxyUrl ? `--proxy ${proxyUrl}` : '';
+    const proxyFlag = proxyUrl ? `--proxy "${proxyUrl}"` : '';
 
-    // Extractor args shared between both commands
-    const extractorArgs = '--extractor-args "youtube:player_client=android,web"';
+    console.log('=== PROXY URL ===', proxyUrl || 'NOT SET');
 
-    // 1. LIST FORMATS
+    // LIST FORMATS
     console.log('=== LISTING FORMATS ===');
     try {
       const { stdout } = await execAsync(
-        `yt-dlp ${proxyFlag} ${extractorArgs} -F "${url}"`,
+        `yt-dlp ${proxyFlag} -F "${url}"`,
         { maxBuffer: 1024 * 1024 * 10 }
       );
       console.log(stdout);
     } catch (e: any) {
-      console.error('Could not list formats:', e.stderr);
+      console.error('List error:', e.stderr || e.message);
     }
 
-    // 2. DOWNLOAD — broad format selector, no player_skip
+    // DOWNLOAD
     const cmd = `yt-dlp \
       ${proxyFlag} \
-      ${extractorArgs} \
-      -f "bestaudio[ext=m4a]/bestaudio/best/worst" \
+      -f "bestaudio/best" \
       --extract-audio \
       --audio-format mp3 \
       --audio-quality 0 \
