@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import ytdl from '@distube/ytdl-core';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import https from 'https';
 
 import { DOWNLOAD_PATH } from '../../config';
 
@@ -14,35 +14,49 @@ export default class YTDownload {
       fs.mkdirSync(DOWNLOAD_PATH, { recursive: true });
     }
 
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
     const proxyUrl = process.env.PROXY_URL;
-    const agent = proxyUrl ? ytdl.createProxyAgent(proxyUrl) : undefined;
+    const proxyFlag = proxyUrl ? `--proxy "${proxyUrl}"` : '';
 
-    console.log('=== DOWNLOADING ===', proxyUrl ? 'via proxy' : 'no proxy');
-
-    const info = await ytdl.getInfo(url, { agent });
-    console.log('=== TITLE ===', info.videoDetails.title);
-    console.log('=== FORMATS ===', info.formats.length, 'available');
-
-    const stream = ytdl(url, {
-      filter: 'audioonly',
-      quality: 'highestaudio',
-      agent,
+    // Use Piped API to get stream URL (Piped handles YouTube on their end)
+    console.log('=== FETCHING STREAM INFO ===');
+    const streamInfo = await new Promise<any>((resolve, reject) => {
+      https.get(`https://pipedapi.kavin.rocks/streams/${videoId}`, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); }
+          catch (e) { reject(new Error('Failed to parse stream info')); }
+        });
+      }).on('error', reject);
     });
 
+    if (!streamInfo.audioStreams?.length) {
+      throw new Error('No audio streams found');
+    }
+
+    // Pick best audio
+    const audio = streamInfo.audioStreams
+      .filter((s: any) => s.mimeType?.includes('audio'))
+      .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+
+    console.log('=== TITLE ===', streamInfo.title);
+    console.log('=== AUDIO ===', audio.quality, audio.mimeType);
+
+    // Download through your proxy using yt-dlp (just the download part)
     const rawOutput = path.join(DOWNLOAD_PATH, `${videoId}.webm`);
     const mp3Output = path.join(DOWNLOAD_PATH, `${videoId}.mp3`);
 
-    const writer = fs.createWriteStream(rawOutput);
-    stream.pipe(writer);
+    console.log('=== DOWNLOADING VIA PROXY ===');
+    await execAsync(
+      `curl ${proxyFlag ? proxyFlag.replace('--proxy', '-x') : ''} -L -o "${rawOutput}" "${audio.url}"`,
+      { maxBuffer: 1024 * 1024 * 10, timeout: 60000 }
+    );
 
-    await new Promise<void>((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-      stream.on('error', reject);
-    });
+    if (!fs.existsSync(rawOutput)) {
+      throw new Error('Download failed: audio file was not created');
+    }
 
-    // Convert to mp3 with ffmpeg
+    // Convert to mp3
     console.log('=== CONVERTING TO MP3 ===');
     await execAsync(`ffmpeg -i "${rawOutput}" -vn -ab 192k "${mp3Output}" -y`, {
       timeout: 30000,
