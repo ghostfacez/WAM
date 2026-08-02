@@ -18,11 +18,14 @@ export default class YTDownload {
     const proxyUrl = process.env.PROXY_URL;
     const proxyFlag = proxyUrl ? `--proxy ${proxyUrl}` : '';
 
-    // 1. LIST FORMATS FIRST - this will show in Railway logs
+    // Extractor args shared between both commands
+    const extractorArgs = '--extractor-args "youtube:player_client=android,web"';
+
+    // 1. LIST FORMATS
     console.log('=== LISTING FORMATS ===');
     try {
       const { stdout } = await execAsync(
-        `yt-dlp ${proxyFlag} --extractor-args "youtube:player_client=tv" -F "${url}"`,
+        `yt-dlp ${proxyFlag} ${extractorArgs} -F "${url}"`,
         { maxBuffer: 1024 * 1024 * 10 }
       );
       console.log(stdout);
@@ -30,10 +33,11 @@ export default class YTDownload {
       console.error('Could not list formats:', e.stderr);
     }
 
-    // 2. TRY TO DOWNLOAD - pick any audio
+    // 2. DOWNLOAD — broad format selector, no player_skip
     const cmd = `yt-dlp \
       ${proxyFlag} \
-      -f "bestaudio[ext=m4a]/bestaudio/best" \
+      ${extractorArgs} \
+      -f "bestaudio[ext=m4a]/bestaudio/best/worst" \
       --extract-audio \
       --audio-format mp3 \
       --audio-quality 0 \
@@ -42,7 +46,6 @@ export default class YTDownload {
       --no-check-certificate \
       --socket-timeout 30 \
       --retries 5 \
-      --extractor-args "youtube:player_client=tv;youtube:player_skip=webpage" \
       -o "${output}" \
       "${url}"`;
 
